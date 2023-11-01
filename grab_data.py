@@ -5,7 +5,7 @@ import pandas as pd
 import creds 
 
 def make_call(wallet, query_index, n_xfers_per_call):
-    print(f'Making call for {wallet}, {query_index}, {n_xfers_per_call}...')
+    print(f'Making call for {wallet}, start={query_index}, limit={n_xfers_per_call}...')
 
     base_url = 'https://apilist.tronscanapi.com/api/'
     trc20_endpoint = 'filter/trc20/transfers'
@@ -23,20 +23,21 @@ def make_call(wallet, query_index, n_xfers_per_call):
 
     time.sleep(.205)  # limited to 5 calls per second
 
-    for i in range(5):
+    for i in range(10):
         try:
             r = s.get(url=url, headers=headers, params=trc20_params) 
-        except requests.exceptions.RequestException as e:
+            r.raise_for_status()
+        except requests.exceptions.HTTPError as e:
             raise SystemError(e)
 
         if len(r.json()) == 1:  # {'message': 'internal server error'}
             print(f'Something is amiss with {wallet}...\n{r.json()}\n')
-        time.sleep(.5 * i)
+            time.sleep(i)
         
+    print('...done making call.')
     return r
 
 def grab_one_xfer(j):
-
     timestamp = j['block_ts']
     tx_id = j['transaction_id']
     risk_tx = j['riskTransaction']
@@ -76,15 +77,20 @@ def grab_one_xfer(j):
     ]
 
 def grab_call_xfers(j):
+    print('  Grabbing call transfers...')
+
     xfers = []
     n_xfers_this_call = len(j['token_transfers'])
 
     for x in range(n_xfers_this_call):
         xfers.append(grab_one_xfer(j['token_transfers'][x]))
 
+    print('  ...Done.')    
     return xfers
 
 def grab_wallet_xfers(wallet, n_xfers_per_call):
+    print(f'  Grabbing wallet transfers for {wallet}...')
+
     # first call (to get total # xfers)
     json = make_call(wallet, 0, n_xfers_per_call).json()
     n_xfers = json['total']
@@ -101,9 +107,12 @@ def grab_wallet_xfers(wallet, n_xfers_per_call):
 
     process_wallet_xfers(wallet, xfers)
 
+    print('  ...Done.')    
     return 
 
 def process_wallet_xfers(wallet, xfers):
+    print(f'  Processing wallet for {wallet}...')
+
     # if we got here, we successfully read all xfers for this wallet
     # write the xfers for posteriority so we don't have to reprocess that wallet
     output_list = []
@@ -118,7 +127,8 @@ def process_wallet_xfers(wallet, xfers):
         
     with open('./data/trc20_wallets_processed.txt', 'a') as f:
         f.write(wallet + '\n')
-        
+
+    print('  ...Done.')    
     return 
 
 
