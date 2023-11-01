@@ -23,7 +23,12 @@ def make_call(wallet, query_index, n_xfers_per_call):
 
     time.sleep(.205)  # limited to 5 calls per second
 
-    return requests.get(url=url, headers=headers, params=trc20_params).json()    
+    try:
+        r = s.get(url=url, headers=headers, params=trc20_params) 
+    except requests.exceptions.RequestException as e:
+        raise SystemExit(e)
+    
+    return r 
 
 def grab_one_xfer(j):
 
@@ -65,7 +70,7 @@ def grab_one_xfer(j):
         result
     ]
 
-def grab_all_xfers_in_call(j, n_xfers_per_call):
+def grab_all_xfers_in_call(j):
     xfers = []
     n_xfers_this_call = len(j['token_transfers'])
 
@@ -78,30 +83,61 @@ def grab_all_xfers_in_call(j, n_xfers_per_call):
 
 def grab_all_xfers_in_wallet(wallet, n_xfers_per_call):
     # first call (to get total # xfers)
-    j = make_call(wallet, 0, n_xfers_per_call)
-    n_xfers = j['total']
+    json = make_call(wallet, 0, n_xfers_per_call).json()
+    n_xfers = json['total']
     n_loops = math.ceil(n_xfers / n_xfers_per_call)
 
     # grab all the xfers in the first call
-    xfers = grab_all_xfers_in_call(j, n_xfers_per_call)
+    xfers = grab_all_xfers_in_call(json)
 
     # grab the remaining xfers via subsequent calls
     for l in range(1, n_loops):
         query_index = l * n_xfers_per_call
-        j = make_call(wallet, query_index, n_xfers_per_call)
-        xfers.extend(grab_all_xfers_in_call(j, n_xfers_per_call))
+        json = make_call(wallet, query_index, n_xfers_per_call).json()
+        xfers.extend(grab_all_xfers_in_call(json))
 
-    [x.insert(0, wallet) for x in xfers]  # add wallet as first field
+    process_wallet_xfers(wallet, xfers)
+
+    return 
+
+def process_wallet_xfers(wallet, xfers):
+    # if we got here, we successfully read all xfers for this wallet
+    # write the xfers for posteriority so we don't have to reprocess that wallet
+    output_list = []
     
-    return xfers 
+    for xfer in xfers:
+        output_list.append([wallet] + xfer)
 
-n_xfers_per_call = 50
+    df = pd.DataFrame(output_list)
 
-df = pd.read_csv('./data/wallets_with_tron_info.csv')
-wallets = list(set(df.wallet.tolist()))[:3]
+    with open('./data/trc20_xfers.csv', 'a') as f:
+        df.to_csv(f, index=False)
+        
+    with open('./data/trc20_wallets_processed.txt', 'a') as f:
+        f.write(wallet)
+        
+    return 
 
 
-xfers = []
-for wallet in wallets:
-    xfers.append(grab_all_xfers_in_wallet(wallet, n_xfers_per_call))
+def load_wallets():
+    df = pd.read_csv('./data/tron_wallets.csv')
+    wallets = list(dict.fromkeys(df.wallet.tolist()))  # preserves order
+
+    with open('./data/trc20_wallets_processed.txt', 'r') as f:
+        text = f.read()
+    wallets_already_processed = text.split('\n')
+
+    wallets_to_process = [wallet for wallet in wallets if wallet not in wallets_already_processed]
+
+    return wallets_to_process[3:4]
+
+
+if __name__ == '__main__':
+    n_xfers_per_call = 50
+    wallets = load_wallets()
     
+    s = requests.Session()
+
+    xfers = []
+    for wallet in wallets:
+        xfers.append(grab_all_xfers_in_wallet(wallet, n_xfers_per_call))

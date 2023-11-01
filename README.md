@@ -27,6 +27,7 @@ Contains every Tron wallet address appearing across all ASOs.
 
 | field name | description|
 | --- | --- |
+| num | an index |
 | wallet | Tron address of the wallet of concern |
 | date_created | per Tronscan API calls, verified on [Tronscan](https://tronscan.org) |
 | date_most_recent | per Tronscan API calls, verified on [Tronscan](https://tronscan.org) |
